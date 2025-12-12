@@ -1,6 +1,4 @@
-"""
-OpenAI API client implementation for PromptGuard.
-"""
+# OpenAI client for PromptGuard
 
 from typing import Dict, Any, Optional, List
 from openai import OpenAI
@@ -12,14 +10,7 @@ class OpenAIClient(BaseModel, BaseLLMClient):
     """OpenAI API client wrapper."""
     
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, config: Optional[Any] = None):
-        """
-        Initialize OpenAI client.
-        
-        Args:
-            api_key: OpenAI API key (defaults to Config.OPENAI_API_KEY)
-            model: Model name (defaults to Config.OPENAI_MODEL)
-            config: Optional ModelConfig object (if provided, overrides model parameter)
-        """
+        """Initialize OpenAI client."""
         # Support both direct parameters and config object
         if config is not None:
             self.model = config.model_name

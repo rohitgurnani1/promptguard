@@ -41,6 +41,9 @@ def test_run_eval_shapes_and_success_flags():
     # One summary per defense
     assert len(summaries) == len(defenses)
     for summary in summaries:
-        # All attacks successful, so ASR=1.0 and robustness=0.0
+        # All attacks successful, so ASR=1.0
         assert summary.asr == 1.0
-        assert summary.robustness == 0.0
+        assert summary.num_attacks == len(attacks)
+        # All attacks should have 100% success rate
+        for attack_name, success_rate in summary.attack_breakdown.items():
+            assert success_rate == 1.0

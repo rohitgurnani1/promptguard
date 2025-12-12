@@ -1,6 +1,4 @@
-"""
-Prompt hardening defense strategies.
-"""
+# Prompt hardening defense
 
 from typing import List
 from .base import BaseDefense, DefenseContext
@@ -13,7 +11,7 @@ HARDENING_SUFFIX = (
 )
 
 class PromptHardening(BaseDefense):
-    """Prompt hardening defense that adds instructions to resist injection."""
+    """Adds instructions to resist prompt injection."""
     
     def __init__(self):
         super().__init__(
@@ -22,7 +20,7 @@ class PromptHardening(BaseDefense):
         )
     
     def apply(self, ctx: DefenseContext) -> List[Message]:
-        """Apply defense and return message list."""
+        """Apply hardening to the context."""
         hardened_system = ctx.system_prompt + HARDENING_SUFFIX
         return [
             Message(role="system", content=hardened_system),

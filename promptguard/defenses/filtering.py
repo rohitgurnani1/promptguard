@@ -35,13 +35,11 @@ class PromptFiltering(BaseDefense):
         ]
 
     def _sanitize(self, text: str) -> str:
-        """Sanitize suspicious patterns."""
+        """Check for suspicious patterns and flag them."""
         lowered = text.lower()
         for pattern in SUSPICIOUS_PATTERNS:
             if re.search(pattern, lowered):
-                text += (
-                    "\n\n[NOTE: Suspicious instruction detected and flagged by filter.]"
-                )
+                text += "\n\n[NOTE: Suspicious instruction detected and flagged by filter.]"
                 break
         return text
 

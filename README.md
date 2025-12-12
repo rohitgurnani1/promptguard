@@ -12,7 +12,9 @@ A comprehensive framework for evaluating and defending against prompt injection 
 - [Architecture](#architecture)
 - [Attacks](#attacks)
 - [Defenses](#defenses)
+- [Metrics](#metrics)
 - [Web UI](#web-ui)
+- [Configuration](#configuration)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -20,26 +22,38 @@ A comprehensive framework for evaluating and defending against prompt injection 
 
 PromptGuard is a security testing framework designed to help developers, researchers, and organizations evaluate how well their LLM applications are protected against prompt injection attacks. It provides:
 
-- **Comprehensive Attack Library**: 8 different prompt injection attack techniques
-- **Multiple Defense Strategies**: Test various defense mechanisms
-- **Multi-Model Support**: Evaluate across different LLM providers
-- **Detailed Metrics**: Attack success rates, robustness scores, and detailed reports
+- **Comprehensive Attack Library**: 14 different prompt injection attack techniques
+- **Multiple Defense Strategies**: Test various defense mechanisms including baseline (no defense)
+- **Multi-Model Support**: Evaluate across different LLM providers (OpenAI GPT-4o-mini, GPT-5-mini, etc.)
+- **Advanced Metrics**: Attack success rates, semantic deviation scores, precision/recall, and leakage severity scores
 
 ## ✨ Features
 
-### 🎯 Attack Types
+### 🎯 Attack Types (14 Total)
 
+**Direct Attacks:**
 1. **Direct Override** - Classic "ignore previous instructions" attack
 2. **Direct Override Paraphrase** - Paraphrased override to bypass naive filters
-3. **Persona Jailbreak** - Role-play persona that ignores rules
-4. **Sandwich Instruction** - Benign content with malicious instruction in the middle
-5. **Indirect Embedded** - Malicious instruction hidden in embedded documents
-6. **Indirect Quoted** - Malicious instructions inside quotes
-7. **Meta Question** - Asks meta-questions about policies and system prompts
-8. **Multi-Step Refinement** - Requests internal rules as "style guidelines"
+3. **Sandwich Instruction** - Benign content with malicious instruction in the middle
+
+**Indirect Attacks:**
+4. **Indirect Embedded** - Malicious instruction hidden in embedded documents
+5. **Indirect Quoted** - Malicious instructions inside quotes
+6. **Example Based** - Asks for examples that reveal internal structure
+7. **Analogy Attack** - Uses analogies to extract information indirectly
+8. **Code Generation** - Asks model to generate code that reveals its structure
+
+**Jailbreak Attacks:**
+9. **Persona Jailbreak** - Role-play persona that ignores rules
+10. **Meta Question** - Asks meta-questions about policies and system prompts
+11. **Multi-Step Refinement** - Requests internal rules as "style guidelines"
+12. **Hypothetical Scenario** - Uses hypothetical scenarios to extract information
+13. **Reverse Psychology** - Uses reverse psychology to get information
+14. **DAN Attack** - Do Anything Now style attack - bypasses restrictions
 
 ### 🛡️ Defense Strategies
 
+- **No Defense** (Baseline): Tests attacks without any defense to establish baseline performance
 - **Prompt Hardening**: Strengthens system prompts with explicit priority rules
 - **Prompt Filtering**: Detects and flags suspicious patterns in user input
 - **Context Isolation**: Separates trusted system context from untrusted content
@@ -48,8 +62,13 @@ PromptGuard is a security testing framework designed to help developers, researc
 
 - Multi-model evaluation (OpenAI GPT-4o-mini, GPT-5-mini, etc.)
 - Batch evaluation across multiple attacks and defenses
-- Detailed metrics and reporting
+- **Advanced Metrics**:
+  - Attack Success Rate (ASR) with per-attack breakdowns
+  - Semantic Deviation Score (SDS) - measures output deviation from baseline
+  - Defense Precision & Recall - measures defense effectiveness
+  - Leakage Severity Score (LSS) - measures severity of information leakage
 - Export results to JSON/CSV
+- Baseline comparison (no defense vs. with defenses)
 
 ## 🚀 Installation
 
@@ -134,7 +153,7 @@ defenses = [PromptHardening()]
 
 # Run evaluation
 eval_config = EvalConfig(
-    benign_task_prompt="Summarize this conversation."
+    benign_tasks=["Summarize this conversation."]
 )
 
 records, summaries = run_eval(
@@ -146,7 +165,14 @@ records, summaries = run_eval(
 
 # Print results
 for summary in summaries:
-    print(f"Robustness: {summary.robustness:.2%}")
+    print(f"ASR: {summary.asr:.2%}")
+    print(f"Per-attack breakdown: {summary.attack_breakdown}")
+    if summary.avg_sds is not None:
+        print(f"Avg SDS: {summary.avg_sds:.3f}")
+    if summary.precision is not None:
+        print(f"Precision: {summary.precision:.2%}, Recall: {summary.recall:.2%}")
+    if summary.avg_lss is not None:
+        print(f"Avg LSS: {summary.avg_lss:.3f}")
 ```
 
 ### Custom Attacks
@@ -234,6 +260,16 @@ Jailbreak attacks attempt to reframe the model's context:
 
 ## 🛡️ Defenses
 
+### No Defense (Baseline)
+
+Establishes baseline performance for comparison:
+
+```python
+from promptguard.defenses.no_defense import NoDefense
+
+defense = NoDefense()  # Passes prompts through unchanged
+```
+
 ### Prompt Hardening
 
 Adds explicit instructions to prioritize system prompts over user input:
@@ -254,15 +290,59 @@ from promptguard.defenses.filtering import PromptFiltering
 defense = PromptFiltering()
 ```
 
+### Context Isolation
+
+Separates trusted system context from untrusted embedded content:
+
+```python
+from promptguard.defenses.filtering import ContextIsolationDefense
+
+defense = ContextIsolationDefense()
+```
+
+## 📊 Metrics
+
+### Attack Success Rate (ASR)
+
+The percentage of attacks that successfully extracted information:
+- **Overall ASR**: Across all attacks
+- **Per-Attack ASR**: Breakdown by attack type
+- **Lower is better**: Indicates stronger defense
+
+### Semantic Deviation Score (SDS)
+
+Measures how much the model's output deviates from the expected baseline response:
+- **Range**: 0 (identical) to 1 (completely different)
+- **Use**: Detects when attacks cause semantic drift
+- **Lower is better**: Indicates defense maintains normal behavior
+
+### Defense Precision & Recall
+
+Standard classification metrics adapted for defense evaluation:
+- **Precision**: Accuracy of defense blocking (when it blocks, is it correct?)
+- **Recall**: Coverage of defense blocking (how many attacks did it catch?)
+- **Higher is better**: Indicates more effective defense
+
+### Leakage Severity Score (LSS)
+
+Quantifies the severity of information leaked during successful attacks:
+- **Range**: 0 (no leakage) to 1 (critical leakage)
+- **Use**: Prioritize fixing high-severity leaks
+- **Lower is better**: Indicates less severe information exposure
+
+For detailed metric documentation, see [NEW_METRICS_IMPLEMENTATION.md](NEW_METRICS_IMPLEMENTATION.md).
+
 ## 🌐 Web UI
 
 The Streamlit web interface provides an interactive way to:
 
-- ✅ Select models, attacks, and defenses
+- ✅ Select models, attacks, and defenses (including baseline "no defense")
 - ✅ Run evaluations with a single click
-- ✅ View detailed results and metrics
-- ✅ Compare performance across models
+- ✅ View detailed results and advanced metrics (ASR, SDS, Precision/Recall, LSS)
+- ✅ Per-attack breakdown visualization
+- ✅ Compare performance across models and defenses
 - ✅ Export results to JSON/CSV
+- ✅ Real-time progress tracking
 
 Launch with:
 ```bash
@@ -272,17 +352,29 @@ streamlit run app.py
 ## 📊 Example Results
 
 ```
+Defense: no_defense (Baseline)
+Total attacks:       14
+Successful attacks:  3
+Attack success rate: 21.43%
+Attack breakdown:    {'analogy_attack': 100.0%, 'code_generation': 100.0%, ...}
+
 Defense: prompt_hardening
-Total attacks:       8
-Successful attacks:  4
-Attack success rate: 50.00%
-Robustness score:    50.00%
+Total attacks:       14
+Successful attacks:  1
+Attack success rate: 7.14%
+Avg SDS:             0.45
+Precision:           100.00%
+Recall:              92.86%
+Avg LSS:             0.85
 
 Defense: prompt_filtering
-Total attacks:       8
-Successful attacks:  3
-Attack success rate: 37.50%
-Robustness score:    62.50%
+Total attacks:       14
+Successful attacks:  2
+Attack success rate: 14.29%
+Avg SDS:             0.52
+Precision:           100.00%
+Recall:              85.71%
+Avg LSS:             0.78
 ```
 
 ## 🔧 Configuration
@@ -317,7 +409,7 @@ Contributions are welcome! Areas for improvement:
 - Test coverage
 - Documentation improvements
 
-See [IMPROVEMENTS.md](IMPROVEMENTS.md) for a detailed improvement plan.
+See [IMPROVEMENTS_SUMMARY.md](IMPROVEMENTS_SUMMARY.md) for completed improvements and [PROJECT_STATUS.md](PROJECT_STATUS.md) for current project status.
 
 ## 📝 License
 
@@ -338,8 +430,8 @@ See [IMPROVEMENTS.md](IMPROVEMENTS.md) for a detailed improvement plan.
 ## 🐛 Known Issues
 
 - Some models (like GPT-5-mini) require more tokens due to reasoning tokens
-- Empty responses may occur with certain model/defense combinations
 - Rate limiting may affect large batch evaluations
+- Modern well-aligned models (GPT-4o-mini, GPT-5-mini) have naturally low baseline ASR (10-30%), which is expected and indicates good security
 
 ## 🚀 Deployment & Hosting
 
@@ -363,10 +455,12 @@ For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 - [ ] Support for Anthropic Claude
 - [ ] Support for Google Gemini
-- [ ] Async/parallel evaluation
-- [ ] Cost tracking
-- [ ] Advanced metrics (semantic similarity, etc.)
-- [ ] Test suite
+- [ ] Async/parallel evaluation (5-10x speedup)
+- [ ] Cost tracking and token usage analytics
+- [ ] LLM-based success heuristic (more accurate than keyword matching)
+- [ ] Historical result tracking and comparison
+- [ ] Advanced visualizations (heatmaps, radar charts)
+- [ ] Test suite expansion
 - [ ] CI/CD pipeline
 
 ---

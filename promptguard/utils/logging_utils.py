@@ -33,4 +33,19 @@ def print_summaries(summaries: Iterable[EvalSummary], defenses: list[str]):
         print(f"Total attacks:       {summary.total}")
         print(f"Successful attacks:  {summary.successes}")
         print(f"Attack success rate: {summary.asr:.2%}")
-        print(f"Robustness score:    {summary.robustness:.2%}")
+        print(f"Number of attack types: {summary.num_attacks}")
+        
+        # Advanced metrics
+        if summary.avg_sds is not None:
+            print(f"Avg Semantic Deviation Score: {summary.avg_sds:.3f} (0=identical, 1=completely different)")
+        if summary.precision is not None:
+            print(f"Defense Precision: {summary.precision:.2%}")
+        if summary.recall is not None:
+            print(f"Defense Recall: {summary.recall:.2%}")
+        if summary.avg_lss is not None:
+            print(f"Avg Leakage Severity Score: {summary.avg_lss:.3f} (0=no leakage, 1=critical)")
+        
+        if summary.attack_breakdown:
+            print("\nPer-Attack Success Rates:")
+            for attack_name, success_rate in sorted(summary.attack_breakdown.items()):
+                print(f"  {attack_name}: {success_rate:.2%}")

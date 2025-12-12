@@ -1,6 +1,4 @@
-"""
-Streamlit UI for PromptGuard - Interactive Prompt Injection Evaluation
-"""
+# Streamlit app for PromptGuard evaluation
 
 import streamlit as st
 import sys
@@ -16,6 +14,7 @@ from promptguard.models.openai_client import OpenAIClient
 from promptguard.attacks.library import get_default_attacks
 from promptguard.defenses.hardening import PromptHardening
 from promptguard.defenses.filtering import PromptFiltering, ContextIsolationDefense
+from promptguard.defenses.no_defense import NoDefense
 from promptguard.eval.runner import run_eval, EvalConfig
 from promptguard.utils.logging_utils import print_records, print_summaries
 import pandas as pd
@@ -114,6 +113,7 @@ def main():
         # Defense selection
         st.subheader("🛡️ Defenses")
         defense_options = {
+            "no_defense": NoDefense(),  # Baseline - no defense
             "prompt_hardening": PromptHardening(),
             "prompt_filtering": PromptFiltering(),
             "context_isolation": ContextIsolationDefense(),
@@ -158,7 +158,7 @@ def main():
             - 🎯 **8 Different Attack Types**: Test against various prompt injection techniques
             - 🛡️ **Multiple Defense Strategies**: Evaluate prompt hardening and filtering
             - 📊 **Multi-Model Support**: Compare performance across different LLMs
-            - 📈 **Comprehensive Metrics**: Attack success rates and robustness scores
+            - 📈 **Comprehensive Metrics**: Attack success rates and per-attack breakdowns
             
             ### How it works:
             1. Select models, attacks, and defenses
@@ -206,7 +206,7 @@ def main():
             attacks = [attack_dict[name] for name in selected_attacks]
             defenses = [defense_options[name] for name in selected_defenses]
             
-            eval_config = EvalConfig(benign_task_prompt=benign_task)
+            eval_config = EvalConfig(benign_tasks=[benign_task])
             
             records, summaries = run_eval(
                 model=client,
@@ -252,14 +252,24 @@ def main():
         summary_data = []
         for model_name, results in all_results.items():
             for summary, defense_name in zip(results["summaries"], results["defenses"]):
-                summary_data.append({
+                row = {
                     "Model": model_name,
                     "Defense": defense_name,
                     "Total Attacks": summary.total,
                     "Successful Attacks": summary.successes,
                     "Attack Success Rate": f"{summary.asr:.2%}",
-                    "Robustness": f"{summary.robustness:.2%}"
-                })
+                    "Attack Types": summary.num_attacks
+                }
+                # Add advanced metrics if available
+                if summary.avg_sds is not None:
+                    row["Avg SDS"] = f"{summary.avg_sds:.3f}"
+                if summary.precision is not None:
+                    row["Precision"] = f"{summary.precision:.2%}"
+                if summary.recall is not None:
+                    row["Recall"] = f"{summary.recall:.2%}"
+                if summary.avg_lss is not None:
+                    row["Avg LSS"] = f"{summary.avg_lss:.3f}"
+                summary_data.append(row)
         
         if summary_data:
             df_summary = pd.DataFrame(summary_data)
@@ -289,6 +299,103 @@ def main():
             except Exception:
                 # Fallback to simple chart
                 st.bar_chart(df_viz, x="Model", y="Success Rate", color="Defense")
+    
+    # Per-Attack Breakdown
+    st.markdown("---")
+    st.subheader("🎯 Per-Attack Success Rates")
+    st.markdown("**Which attacks are most effective?** This breakdown shows success rates for each attack type.")
+    
+    for model_name, results in all_results.items():
+        with st.expander(f"📊 Attack Breakdown: {model_name}", expanded=False):
+            for summary, defense_name in zip(results["summaries"], results["defenses"]):
+                st.markdown(f"#### Defense: {defense_name}")
+                
+                if summary.attack_breakdown:
+                    # Create a DataFrame for the attack breakdown
+                    breakdown_data = [
+                        {
+                            "Attack": attack_name,
+                            "Success Rate": f"{success_rate:.2%}",
+                            "Success Rate (decimal)": success_rate
+                        }
+                        for attack_name, success_rate in sorted(summary.attack_breakdown.items())
+                    ]
+                    df_breakdown = pd.DataFrame(breakdown_data)
+                    st.dataframe(df_breakdown[["Attack", "Success Rate"]], use_container_width=True)
+                    
+                    # Visualize per-attack success rates
+                    st.bar_chart(df_breakdown.set_index("Attack")["Success Rate (decimal)"])
+                else:
+                    st.info("No attack breakdown available.")
+    
+    # Advanced Metrics Section
+    st.markdown("---")
+    st.subheader("🔬 Advanced Metrics")
+    st.markdown("""
+    **New Metrics Explained:**
+    - **SDS (Semantic Deviation Score)**: Measures how much the output deviates from expected baseline (0=identical, 1=completely different)
+    - **Precision**: Defense precision - how accurate the defense is at blocking attacks
+    - **Recall**: Defense recall - how many attacks the defense successfully blocked
+    - **LSS (Leakage Severity Score)**: Severity of information leakage when attacks succeed (0=no leakage, 1=critical)
+    """)
+    
+    for model_name, results in all_results.items():
+        with st.expander(f"🔬 Advanced Metrics: {model_name}", expanded=False):
+            for summary, defense_name in zip(results["summaries"], results["defenses"]):
+                st.markdown(f"#### Defense: {defense_name}")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    if summary.avg_sds is not None:
+                        st.metric(
+                            "Avg SDS",
+                            f"{summary.avg_sds:.3f}",
+                            help="Semantic Deviation Score: 0=identical to baseline, 1=completely different"
+                        )
+                    else:
+                        st.metric("Avg SDS", "N/A")
+                
+                with col2:
+                    if summary.precision is not None:
+                        st.metric(
+                            "Precision",
+                            f"{summary.precision:.2%}",
+                            help="Defense precision: accuracy of blocking"
+                        )
+                    else:
+                        st.metric("Precision", "N/A")
+                
+                with col3:
+                    if summary.recall is not None:
+                        st.metric(
+                            "Recall",
+                            f"{summary.recall:.2%}",
+                            help="Defense recall: how many attacks were blocked"
+                        )
+                    else:
+                        st.metric("Recall", "N/A")
+                
+                with col4:
+                    if summary.avg_lss is not None:
+                        # Color code based on severity
+                        lss_value = summary.avg_lss
+                        if lss_value < 0.3:
+                            delta_color = "normal"
+                        elif lss_value < 0.6:
+                            delta_color = "off"
+                        else:
+                            delta_color = "inverse"
+                        
+                        st.metric(
+                            "Avg LSS",
+                            f"{summary.avg_lss:.3f}",
+                            delta=None,
+                            delta_color=delta_color,
+                            help="Leakage Severity Score: 0=no leakage, 1=critical leakage"
+                        )
+                    else:
+                        st.metric("Avg LSS", "N/A")
     
     # Detailed results by model
     for model_name, results in all_results.items():
@@ -351,7 +458,12 @@ def main():
                     "total": summary.total,
                     "successes": summary.successes,
                     "asr": summary.asr,
-                    "robustness": summary.robustness
+                    "num_attacks": summary.num_attacks,
+                    "attack_breakdown": summary.attack_breakdown,
+                    "avg_sds": summary.avg_sds,
+                    "precision": summary.precision,
+                    "recall": summary.recall,
+                    "avg_lss": summary.avg_lss
                 }
             for record in results["records"]:
                 export_data[model_name]["records"].append({
