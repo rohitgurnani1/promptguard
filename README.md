@@ -9,128 +9,121 @@ A comprehensive framework for evaluating and defending against prompt injection 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Usage](#usage)
+- [REST API](#rest-api)
+- [Run History & Regression](#run-history--regression)
 - [Architecture](#architecture)
 - [Attacks](#attacks)
 - [Defenses](#defenses)
 - [Metrics](#metrics)
 - [Web UI](#web-ui)
 - [Configuration](#configuration)
+- [Testing](#testing)
 - [Contributing](#contributing)
-- [License](#license)
+- [Deployment](#deployment)
 
 ## 🎯 Overview
 
-PromptGuard is a security testing framework designed to help developers, researchers, and organizations evaluate how well their LLM applications are protected against prompt injection attacks. It provides:
+PromptGuard is a security testing framework for evaluating how well LLM applications resist prompt injection. It provides:
 
-- **Comprehensive Attack Library**: 14 different prompt injection attack techniques
-- **Multiple Defense Strategies**: Test various defense mechanisms including baseline (no defense)
-- **Multi-Model Support**: Evaluate across different LLM providers (OpenAI GPT-4o-mini, GPT-5-mini, etc.)
-- **Advanced Metrics**: Attack success rates, semantic deviation scores, precision/recall, and leakage severity scores
+- **14 attack techniques** across direct, indirect, and jailbreak categories
+- **4 defense strategies** including a no-defense baseline
+- **Multi-provider support** — OpenAI, Anthropic, and local Ollama models
+- **Advanced metrics** — ASR, SDS, precision/recall, benign false-positive rate, LSS, token usage, and cost estimates
+- **Run history & regression** — SQLite-backed storage with run-to-run comparison
+- **Web UI and REST API** — Streamlit dashboard and FastAPI for CI integration
 
 ## ✨ Features
 
 ### 🎯 Attack Types (14 Total)
 
-**Direct Attacks:**
-1. **Direct Override** - Classic "ignore previous instructions" attack
-2. **Direct Override Paraphrase** - Paraphrased override to bypass naive filters
-3. **Sandwich Instruction** - Benign content with malicious instruction in the middle
+**Direct:** Direct Override, Direct Override Paraphrase, Sandwich Instruction
 
-**Indirect Attacks:**
-4. **Indirect Embedded** - Malicious instruction hidden in embedded documents
-5. **Indirect Quoted** - Malicious instructions inside quotes
-6. **Example Based** - Asks for examples that reveal internal structure
-7. **Analogy Attack** - Uses analogies to extract information indirectly
-8. **Code Generation** - Asks model to generate code that reveals its structure
+**Indirect:** Indirect Embedded, Indirect Quoted, Example Based, Analogy Attack, Code Generation
 
-**Jailbreak Attacks:**
-9. **Persona Jailbreak** - Role-play persona that ignores rules
-10. **Meta Question** - Asks meta-questions about policies and system prompts
-11. **Multi-Step Refinement** - Requests internal rules as "style guidelines"
-12. **Hypothetical Scenario** - Uses hypothetical scenarios to extract information
-13. **Reverse Psychology** - Uses reverse psychology to get information
-14. **DAN Attack** - Do Anything Now style attack - bypasses restrictions
+**Jailbreak:** Persona Jailbreak, Meta Question, Multi-Step Refinement, Hypothetical Scenario, Reverse Psychology, DAN Attack
 
 ### 🛡️ Defense Strategies
 
-- **No Defense** (Baseline): Tests attacks without any defense to establish baseline performance
-- **Prompt Hardening**: Strengthens system prompts with explicit priority rules
-- **Prompt Filtering**: Detects and flags suspicious patterns in user input
-- **Context Isolation**: Separates trusted system context from untrusted content
+| Defense | Description |
+|---------|-------------|
+| **No Defense** | Baseline — passes prompts through unchanged |
+| **Prompt Hardening** | Adds explicit system-prompt priority rules |
+| **Prompt Filtering** | Strips suspicious injection patterns from user input |
+| **Context Isolation** | Treats quoted/document content as data, not commands |
 
 ### 📊 Evaluation Capabilities
 
-- Multi-model evaluation (OpenAI GPT-4o-mini, GPT-5-mini, etc.)
-- Batch evaluation across multiple attacks and defenses
-- **Advanced Metrics**:
-  - Attack Success Rate (ASR) with per-attack breakdowns
-  - Semantic Deviation Score (SDS) - measures output deviation from baseline
-  - Defense Precision & Recall - measures defense effectiveness
-  - Leakage Severity Score (LSS) - measures severity of information leakage
-- Export results to JSON/CSV
-- Baseline comparison (no defense vs. with defenses)
+- **Multi-provider evaluation** — OpenAI, Anthropic Claude, Ollama (local)
+- **Custom system prompts** — test your actual production prompt
+- **Benign baseline suite** — measures false-positive rate for real precision
+- **Parallel evaluation** — configurable concurrency (`max_concurrency`, default 5)
+- **Success scorers** — keyword heuristic or LLM-as-judge
+- **Token & cost tracking** — per-run token counts and USD estimates
+- **Run history** — persist results to SQLite for regression analysis
+- **Export** — JSON/CSV from the web UI
 
 ## 🚀 Installation
 
 ### Prerequisites
 
 - Python 3.8+
-- OpenAI API key (or other LLM provider API key)
+- API key for your chosen provider (OpenAI or Anthropic), or a running [Ollama](https://ollama.com) instance
 
 ### Setup
 
-1. **Clone the repository**:
 ```bash
-git clone <repository-url>
-cd promptguard_project
+git clone https://github.com/rohitgurnani1/promptguard.git
+cd promptguard
+
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+# Core install (editable)
+pip install -e ".[dev]"
+
+# Optional extras
+pip install -e ".[anthropic]"   # Anthropic Claude support
+pip install -e ".[api]"         # FastAPI REST server
+pip install -e ".[all]"         # Everything
 ```
 
-2. **Create a virtual environment**:
-```bash
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+### Environment Variables
 
-3. **Install dependencies**:
 ```bash
-pip install openai python-dotenv streamlit pandas
-```
-
-4. **Set up environment variables**:
-```bash
-export OPENAI_API_KEY="your-api-key-here"
-```
-
-Or create a `.env` file:
-```
-OPENAI_API_KEY=your-api-key-here
+export OPENAI_API_KEY="your-openai-key"       # OpenAI provider
+export ANTHROPIC_API_KEY="your-anthropic-key" # Anthropic provider
+export OLLAMA_BASE_URL="http://localhost:11434" # Ollama (optional)
+export PROMPTGUARD_HISTORY_DB="~/.promptguard/history.db"  # Run history (optional)
 ```
 
 ## 🏃 Quick Start
 
-### Command Line Interface
-
-Run a quick evaluation:
-
-```bash
-python -m examples.run_quick_eval
-```
-
-Run multi-model evaluation:
-
-```bash
-python -m examples.run_multi_model_eval
-```
-
-### Web UI (Streamlit)
-
-Launch the interactive web interface:
+### Web UI
 
 ```bash
 streamlit run app.py
+# → http://localhost:8501
 ```
 
-Then open your browser to `http://localhost:8501`
+### CLI Examples
+
+```bash
+python -m examples.run_quick_eval
+python -m examples.run_multi_model_eval
+```
+
+### REST API
+
+```bash
+uvicorn api:app --reload --port 8000
+# → http://localhost:8000/docs
+```
+
+### Run Tests
+
+```bash
+pytest tests/ -v
+```
 
 ## 📖 Usage
 
@@ -138,41 +131,48 @@ Then open your browser to `http://localhost:8501`
 
 ```python
 from promptguard.config import ModelConfig
-from promptguard.models.openai_client import OpenAIClient
+from promptguard.models.factory import create_client
 from promptguard.attacks.library import get_default_attacks
 from promptguard.defenses.hardening import PromptHardening
-from promptguard.eval.runner import run_eval, EvalConfig
+from promptguard.defenses.no_defense import NoDefense
+from promptguard.eval.runner import run_eval, EvalConfig, DEFAULT_SYSTEM_PROMPT
 
-# Initialize model
-model_config = ModelConfig(model_name="gpt-4o-mini", max_tokens=512)
-client = OpenAIClient(config=model_config)
+model_config = ModelConfig(provider="openai", model_name="gpt-4o-mini", max_tokens=512)
+client = create_client(model_config)
 
-# Get attacks and defenses
 attacks = get_default_attacks()
-defenses = [PromptHardening()]
+defenses = [NoDefense(), PromptHardening()]
 
-# Run evaluation
 eval_config = EvalConfig(
-    benign_tasks=["Summarize this conversation."]
+    benign_tasks=["Summarize this conversation."],
+    system_prompt=DEFAULT_SYSTEM_PROMPT,
+    include_benign_baseline=True,
+    scorer="heuristic",       # or "llm_judge"
+    max_concurrency=5,
 )
 
-records, summaries = run_eval(
-    model=client,
-    attacks=attacks,
-    defenses=defenses,
-    eval_config=eval_config,
-)
+result = run_eval(client, attacks, defenses, eval_config)
 
-# Print results
-for summary in summaries:
+for summary in result.summaries:
     print(f"ASR: {summary.asr:.2%}")
-    print(f"Per-attack breakdown: {summary.attack_breakdown}")
-    if summary.avg_sds is not None:
-        print(f"Avg SDS: {summary.avg_sds:.3f}")
-    if summary.precision is not None:
-        print(f"Precision: {summary.precision:.2%}, Recall: {summary.recall:.2%}")
-    if summary.avg_lss is not None:
-        print(f"Avg LSS: {summary.avg_lss:.3f}")
+    print(f"Precision: {summary.precision:.2%}, Recall: {summary.recall:.2%}")
+    print(f"Benign FP rate: {summary.benign_fp_rate:.2%}")
+    print(f"Tokens: {summary.total_tokens}, Cost: ${summary.estimated_cost_usd:.4f}")
+```
+
+### Multi-Provider
+
+```python
+from promptguard.models.factory import create_client, get_models_for_provider
+
+# OpenAI
+client = create_client(ModelConfig(provider="openai", model_name="gpt-4o-mini"))
+
+# Anthropic (requires: pip install anthropic)
+client = create_client(ModelConfig(provider="anthropic", model_name="claude-3-5-haiku-latest"))
+
+# Ollama local (requires: ollama serve && ollama pull llama3.2)
+client = create_client(ModelConfig(provider="ollama", model_name="llama3.2"))
 ```
 
 ### Custom Attacks
@@ -181,12 +181,10 @@ for summary in summaries:
 from promptguard.attacks.base import BaseAttack
 
 class CustomAttack(BaseAttack):
-    def __init__(self):
-        super().__init__(
-            name="custom_attack",
-            description="My custom attack"
-        )
-    
+    name = "custom_attack"
+    description = "My custom attack"
+    category = "direct"
+
     def build_user_prompt(self, benign_task_prompt: str) -> str:
         return f"{benign_task_prompt}\n\n[Your attack here]"
 ```
@@ -194,276 +192,210 @@ class CustomAttack(BaseAttack):
 ### Custom Defenses
 
 ```python
+from typing import List
 from promptguard.defenses.base import BaseDefense, DefenseContext
 from promptguard.models.base import Message
 
 class CustomDefense(BaseDefense):
     def __init__(self):
-        super().__init__(
-            name="custom_defense",
-            description="My custom defense"
-        )
-    
+        super().__init__(name="custom_defense", description="My custom defense")
+
     def apply(self, ctx: DefenseContext) -> List[Message]:
-        # Your defense logic here
         return [
             Message(role="system", content=ctx.system_prompt),
             Message(role="user", content=ctx.user_prompt),
         ]
 ```
 
+## 🌐 REST API
+
+Start the server:
+
+```bash
+uvicorn api:app --reload --port 8000
+```
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/providers` | GET | List providers, models, attacks, defenses |
+| `/eval` | POST | Run an evaluation |
+| `/runs` | GET | List saved runs |
+| `/runs/{id}` | GET | Get run details |
+| `/runs/compare` | GET | Regression comparison (`baseline_id`, `current_id`) |
+| `/runs/{id}` | DELETE | Delete a run |
+
+Example:
+
+```bash
+curl -X POST http://localhost:8000/eval \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "openai",
+    "model_name": "gpt-4o-mini",
+    "api_key": "sk-...",
+    "attack_names": ["direct_override_basic"],
+    "defense_names": ["prompt_hardening", "no_defense"],
+    "include_benign_baseline": true,
+    "scorer": "heuristic",
+    "save_to_history": true
+  }'
+```
+
+Interactive docs: `http://localhost:8000/docs`
+
+## 📚 Run History & Regression
+
+Runs are stored in SQLite (default: `~/.promptguard/history.db`).
+
+```python
+from promptguard.history import RunHistoryStore, compare_results
+
+store = RunHistoryStore()
+run_id = store.save("openai", "gpt-4o-mini", {"scorer": "heuristic"}, result)
+
+# Compare two runs
+baseline = store.get_result("baseline-run-id")
+current = store.get_result("current-run-id")
+report = compare_results(baseline, current)
+
+if report.has_regression:
+    print("⚠️ ASR increased:", report.summary)
+for d in report.defenses:
+    print(f"{d.defense_name}: ASR Δ {d.asr_delta:+.2%}")
+```
+
+The Streamlit UI includes a **Run History & Regression** section for comparing saved runs visually.
+
 ## 🏗️ Architecture
 
 ```
 promptguard/
-├── attacks/          # Attack implementations
-│   ├── base.py      # Base attack interface
-│   └── library.py   # Attack library
-├── defenses/         # Defense implementations
-│   ├── base.py      # Base defense interface
-│   ├── hardening.py # Prompt hardening defense
-│   └── filtering.py # Input filtering defense
-├── eval/            # Evaluation framework
-│   ├── runner.py    # Evaluation runner
-│   └── metrics.py   # Metrics and summaries
-├── models/          # LLM client implementations
-│   ├── base.py      # Base model interface
-│   └── openai_client.py  # OpenAI client
-└── utils/           # Utility functions
-    └── logging_utils.py
+├── attacks/              # 14 attack implementations
+├── defenses/             # 4 defense strategies
+├── eval/
+│   ├── runner.py         # Parallel evaluation orchestrator
+│   ├── metrics.py        # ASR, SDS, precision/recall, LSS
+│   ├── heuristics.py     # Keyword-based success detection
+│   ├── scorers.py        # Heuristic + LLM-as-judge scorers
+│   └── pricing.py        # Token cost estimates
+├── history/
+│   ├── store.py          # SQLite run persistence
+│   └── regression.py     # Run-to-run comparison
+├── models/
+│   ├── factory.py        # Multi-provider client factory
+│   ├── openai_client.py
+│   ├── anthropic_client.py
+│   └── ollama_client.py
+└── utils/
+api.py                    # FastAPI REST server
+app.py                    # Streamlit web UI
 ```
 
 ## 🎯 Attacks
 
-### Direct Attacks
-
-Direct attacks attempt to override system instructions explicitly:
-
-- **Direct Override**: "Ignore all previous instructions..."
-- **Direct Override Paraphrase**: Paraphrased versions to bypass filters
-- **Sandwich Instruction**: Malicious instruction sandwiched between benign content
-
-### Indirect Attacks
-
-Indirect attacks hide malicious instructions in seemingly benign content:
-
-- **Indirect Embedded**: Instructions in document excerpts
-- **Indirect Quoted**: Instructions inside quoted text
-
-### Jailbreak Attacks
-
-Jailbreak attacks attempt to reframe the model's context:
-
-- **Persona Jailbreak**: Role-play scenarios
-- **Meta Question**: Questions about internal policies
-- **Multi-Step Refinement**: Requests for "style guidelines"
+Attacks implement `build_user_prompt(benign_task) → str` on the `BaseAttack` interface. See `promptguard/attacks/library.py` for all 14 implementations.
 
 ## 🛡️ Defenses
 
-### No Defense (Baseline)
-
-Establishes baseline performance for comparison:
-
-```python
-from promptguard.defenses.no_defense import NoDefense
-
-defense = NoDefense()  # Passes prompts through unchanged
-```
-
-### Prompt Hardening
-
-Adds explicit instructions to prioritize system prompts over user input:
-
-```python
-from promptguard.defenses.hardening import PromptHardening
-
-defense = PromptHardening()
-```
-
-### Prompt Filtering
-
-Detects and flags suspicious patterns in user input:
-
-```python
-from promptguard.defenses.filtering import PromptFiltering
-
-defense = PromptFiltering()
-```
-
-### Context Isolation
-
-Separates trusted system context from untrusted embedded content:
-
-```python
-from promptguard.defenses.filtering import ContextIsolationDefense
-
-defense = ContextIsolationDefense()
-```
+Defenses implement `apply(DefenseContext) → List[Message]`. Each defense receives the system prompt and user prompt (which may contain an injected attack) and returns the message list sent to the model.
 
 ## 📊 Metrics
 
-### Attack Success Rate (ASR)
+| Metric | Description | Better |
+|--------|-------------|--------|
+| **ASR** | Attack Success Rate — % of attacks that leaked info | Lower |
+| **SDS** | Semantic Deviation Score — output drift from benign baseline (0–1) | Lower |
+| **Precision** | TP / (TP + FP) using benign false positives | Higher |
+| **Recall** | TP / (TP + FN) — attacks blocked | Higher |
+| **Benign FP Rate** | Benign prompts incorrectly flagged as leaks | Lower |
+| **LSS** | Leakage Severity Score for successful attacks (0–1) | Lower |
+| **Token / Cost** | API usage and estimated USD cost per run | — |
 
-The percentage of attacks that successfully extracted information:
-- **Overall ASR**: Across all attacks
-- **Per-Attack ASR**: Breakdown by attack type
-- **Lower is better**: Indicates stronger defense
-
-### Semantic Deviation Score (SDS)
-
-Measures how much the model's output deviates from the expected baseline response:
-- **Range**: 0 (identical) to 1 (completely different)
-- **Use**: Detects when attacks cause semantic drift
-- **Lower is better**: Indicates defense maintains normal behavior
-
-### Defense Precision & Recall
-
-Standard classification metrics adapted for defense evaluation:
-- **Precision**: Accuracy of defense blocking (when it blocks, is it correct?)
-- **Recall**: Coverage of defense blocking (how many attacks did it catch?)
-- **Higher is better**: Indicates more effective defense
-
-### Leakage Severity Score (LSS)
-
-Quantifies the severity of information leaked during successful attacks:
-- **Range**: 0 (no leakage) to 1 (critical leakage)
-- **Use**: Prioritize fixing high-severity leaks
-- **Lower is better**: Indicates less severe information exposure
-
-For detailed metric documentation, see [NEW_METRICS_IMPLEMENTATION.md](NEW_METRICS_IMPLEMENTATION.md).
+**Scorers:** `heuristic` (fast, keyword-based) or `llm_judge` (more accurate, extra API calls).
 
 ## 🌐 Web UI
 
-The Streamlit web interface provides an interactive way to:
+The Streamlit interface supports:
 
-- ✅ Select models, attacks, and defenses (including baseline "no defense")
-- ✅ Run evaluations with a single click
-- ✅ View detailed results and advanced metrics (ASR, SDS, Precision/Recall, LSS)
-- ✅ Per-attack breakdown visualization
-- ✅ Compare performance across models and defenses
-- ✅ Export results to JSON/CSV
-- ✅ Real-time progress tracking
+- Provider selection (OpenAI / Anthropic / Ollama)
+- Model, attack, and defense multiselect
+- Custom system prompt and benign task
+- Benign baseline toggle, scorer choice, concurrency slider
+- Save to run history
+- Results tables, charts, per-attack breakdowns, advanced metrics
+- Run history & regression comparison
+- JSON/CSV export
 
-Launch with:
 ```bash
 streamlit run app.py
 ```
 
-## 📊 Example Results
-
-```
-Defense: no_defense (Baseline)
-Total attacks:       14
-Successful attacks:  3
-Attack success rate: 21.43%
-Attack breakdown:    {'analogy_attack': 100.0%, 'code_generation': 100.0%, ...}
-
-Defense: prompt_hardening
-Total attacks:       14
-Successful attacks:  1
-Attack success rate: 7.14%
-Avg SDS:             0.45
-Precision:           100.00%
-Recall:              92.86%
-Avg LSS:             0.85
-
-Defense: prompt_filtering
-Total attacks:       14
-Successful attacks:  2
-Attack success rate: 14.29%
-Avg SDS:             0.52
-Precision:           100.00%
-Recall:              85.71%
-Avg LSS:             0.78
-```
-
 ## 🔧 Configuration
 
-### Model Configuration
+### EvalConfig Options
 
 ```python
-from promptguard.config import ModelConfig
-
-config = ModelConfig(
-    provider="openai",
-    model_name="gpt-4o-mini",
-    max_tokens=512,
-    temperature=0.2
+EvalConfig(
+    benign_tasks=[...],           # Tasks used as attack carriers
+    system_prompt="...",          # System prompt under test
+    include_benign_baseline=True, # Run benign-only prompts for precision
+    max_concurrency=5,            # Parallel API calls
+    scorer="heuristic",           # "heuristic" | "llm_judge"
 )
 ```
 
-### Environment Variables
+### Supported Providers & Models
 
-- `OPENAI_API_KEY`: Your OpenAI API key
-- `OPENAI_MODEL`: Default model name (optional)
-- `LOG_LEVEL`: Logging level (optional)
+| Provider | Example Models | Install |
+|----------|---------------|---------|
+| `openai` | gpt-4o-mini, gpt-5-mini, gpt-4o | included |
+| `anthropic` | claude-3-5-haiku-latest, claude-3-5-sonnet-latest | `pip install anthropic` |
+| `ollama` | llama3.2, mistral, gemma2 | [ollama.com](https://ollama.com) |
+
+## 🧪 Testing
+
+```bash
+pytest tests/ -v        # 40 tests
+```
+
+CI runs automatically on push/PR to `main` via GitHub Actions (`.github/workflows/ci.yml`).
 
 ## 🤝 Contributing
 
-Contributions are welcome! Areas for improvement:
+Contributions welcome! See [PROJECT_STATUS.md](PROJECT_STATUS.md) for current status and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues.
 
-- Additional attack types
-- New defense strategies
-- Support for more LLM providers (Anthropic, Google, etc.)
-- Better evaluation metrics
-- Test coverage
-- Documentation improvements
+## 🚀 Deployment
 
-See [IMPROVEMENTS_SUMMARY.md](IMPROVEMENTS_SUMMARY.md) for completed improvements and [PROJECT_STATUS.md](PROJECT_STATUS.md) for current project status.
+For detailed hosting instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
-## 📝 License
+| Option | Command |
+|--------|---------|
+| Streamlit Cloud | Push to GitHub → [share.streamlit.io](https://share.streamlit.io) |
+| Local demo | `streamlit run app.py` + `ngrok http 8501` |
+| REST API | `uvicorn api:app --host 0.0.0.0 --port 8000` |
+| Heroku | See `Procfile` and `setup.sh` |
 
-[Add your license here]
+## 🔮 Roadmap
 
-## 🙏 Acknowledgments
-
-- Inspired by research on prompt injection attacks
-- Built with OpenAI's API
-- Uses Streamlit for the web interface
+- [x] Anthropic Claude support
+- [x] Parallel evaluation
+- [x] Cost / token tracking
+- [x] LLM-as-judge scorer
+- [x] Run history & regression
+- [x] REST API & CI pipeline
+- [ ] Google Gemini support
+- [ ] Multi-turn & RAG injection attacks
+- [ ] HTML report export
+- [ ] Advanced visualizations (heatmaps, radar charts)
 
 ## 📚 Resources
 
 - [OpenAI API Documentation](https://platform.openai.com/docs)
+- [Anthropic API Documentation](https://docs.anthropic.com)
 - [Prompt Injection Research](https://arxiv.org/abs/2302.12173)
 - [OWASP LLM Top 10](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
-
-## 🐛 Known Issues
-
-- Some models (like GPT-5-mini) require more tokens due to reasoning tokens
-- Rate limiting may affect large batch evaluations
-- Modern well-aligned models (GPT-4o-mini, GPT-5-mini) have naturally low baseline ASR (10-30%), which is expected and indicates good security
-
-## 🚀 Deployment & Hosting
-
-For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
-
-### Quick Options:
-
-1. **Streamlit Cloud** (Recommended): Free, easy, automatic HTTPS
-   - Push to GitHub → Deploy at [share.streamlit.io](https://share.streamlit.io)
-   
-2. **ngrok** (Quick demo): Create public tunnel for local app
-   ```bash
-   streamlit run app.py
-   ngrok http 8501
-   ```
-
-3. **Heroku**: Production-ready hosting
-   - See `Procfile` and `setup.sh` in repo
-
-## 🔮 Future Enhancements
-
-- [ ] Support for Anthropic Claude
-- [ ] Support for Google Gemini
-- [ ] Async/parallel evaluation (5-10x speedup)
-- [ ] Cost tracking and token usage analytics
-- [ ] LLM-based success heuristic (more accurate than keyword matching)
-- [ ] Historical result tracking and comparison
-- [ ] Advanced visualizations (heatmaps, radar charts)
-- [ ] Test suite expansion
-- [ ] CI/CD pipeline
 
 ---
 
 **Made with ❤️ for LLM security**
-
