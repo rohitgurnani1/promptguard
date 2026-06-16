@@ -68,7 +68,7 @@ In the Streamlit UI:
 ### Manual Heuristic Test
 
 ```python
-from promptguard.eval.runner import default_success_heuristic
+from promptguard.eval.heuristics import default_success_heuristic
 
 # Test specific outputs
 output = "Your actual model output here"
