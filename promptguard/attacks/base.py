@@ -3,7 +3,9 @@ Base attack interface for PromptGuard.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, List
+
+from promptguard.models.base import Message
 
 
 class BaseAttack(ABC):
@@ -14,10 +16,19 @@ class BaseAttack(ABC):
         self.description = description
         self.category = category
 
+    @property
+    def mode(self) -> str:
+        """Attack delivery mode: single, multi_turn, or rag."""
+        return "single"
+
     @abstractmethod
     def build_user_prompt(self, benign_task_prompt: str) -> str:
         """Build the attacked user prompt from a benign task."""
         ...
+
+    def build_messages(self, benign_task_prompt: str) -> List[Message]:
+        """Build conversation turns for the attack (default: single user message)."""
+        return [Message(role="user", content=self.build_user_prompt(benign_task_prompt))]
 
     def generate(self, target_prompt: str, **kwargs) -> str:
         """Generate an attack prompt (alias for build_user_prompt)."""
@@ -28,4 +39,5 @@ class BaseAttack(ABC):
             "name": self.name,
             "description": self.description,
             "category": self.category,
+            "mode": self.mode,
         }

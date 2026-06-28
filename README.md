@@ -25,7 +25,7 @@ A comprehensive framework for evaluating and defending against prompt injection 
 
 PromptGuard is a security testing framework for evaluating how well LLM applications resist prompt injection. It provides:
 
-- **14 attack techniques** across direct, indirect, and jailbreak categories
+- **19 attack techniques** across direct, indirect, jailbreak, multi-turn, and RAG categories
 - **4 defense strategies** including a no-defense baseline
 - **Multi-provider support** — OpenAI, Anthropic, and local Ollama models
 - **Advanced metrics** — ASR, SDS, precision/recall, benign false-positive rate, LSS, token usage, and cost estimates
@@ -57,7 +57,8 @@ PromptGuard is a security testing framework for evaluating how well LLM applicat
 - **Custom system prompts** — test your actual production prompt
 - **Benign baseline suite** — measures false-positive rate for real precision
 - **Parallel evaluation** — configurable concurrency (`max_concurrency`, default 5)
-- **Success scorers** — keyword heuristic or LLM-as-judge
+- **Success scorers** — keyword heuristic, hybrid (heuristic + judge), or LLM-as-judge
+- **YAML eval presets** — `configs/quick.yaml`, `configs/full.yaml`
 - **Token & cost tracking** — per-run token counts and USD estimates
 - **Run history** — persist results to SQLite for regression analysis
 - **Export** — JSON/CSV from the web UI
@@ -112,6 +113,7 @@ streamlit run app.py
 
 ```bash
 python -m examples.run_quick_eval
+python -m examples.run_preset_eval quick   # YAML preset
 python -m examples.run_multi_model_eval
 ```
 
@@ -150,7 +152,7 @@ eval_config = EvalConfig(
     benign_tasks=["Summarize this conversation."],
     system_prompt=DEFAULT_SYSTEM_PROMPT,
     include_benign_baseline=True,
-    scorer="heuristic",       # or "llm_judge"
+    scorer="heuristic",       # or "hybrid" | "llm_judge"
     max_concurrency=5,
 )
 
@@ -315,7 +317,7 @@ Defenses implement `apply(DefenseContext) → List[Message]`. Each defense recei
 | **LSS** | Leakage Severity Score for successful attacks (0–1) | Lower |
 | **Token / Cost** | API usage and estimated USD cost per run | — |
 
-**Scorers:** `heuristic` (fast, keyword-based) or `llm_judge` (more accurate, extra API calls).
+**Scorers:** `heuristic` (fast), `hybrid` (heuristic + judge on uncertain cases), or `llm_judge` (most accurate, highest cost).
 
 ## 🌐 Web UI
 
@@ -344,7 +346,7 @@ EvalConfig(
     system_prompt="...",          # System prompt under test
     include_benign_baseline=True, # Run benign-only prompts for precision
     max_concurrency=5,            # Parallel API calls
-    scorer="heuristic",           # "heuristic" | "llm_judge"
+    scorer="heuristic",           # "heuristic" | "hybrid" | "llm_judge"
 )
 ```
 
@@ -388,7 +390,9 @@ For detailed hosting instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
 - [x] Run history & regression
 - [x] REST API & CI pipeline
 - [ ] Google Gemini support
-- [ ] Multi-turn & RAG injection attacks
+- [x] Multi-turn & RAG injection attacks
+- [x] Hybrid scorer
+- [x] Eval YAML presets
 - [ ] HTML report export
 - [ ] Advanced visualizations (heatmaps, radar charts)
 

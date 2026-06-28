@@ -167,7 +167,7 @@ def main():
         )
         scorer_choice = st.selectbox(
             "Success scorer",
-            options=["heuristic", "llm_judge"],
+            options=["heuristic", "hybrid", "llm_judge"],
             index=0,
             help="How to detect attack success. LLM judge is more accurate but uses extra API calls.",
         )

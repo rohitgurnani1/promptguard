@@ -1,3 +1,4 @@
+from promptguard.attacks.multi_turn import MultiTurnGradualAttack
 from promptguard.eval.runner import run_eval, EvalConfig, DEFAULT_SYSTEM_PROMPT
 from promptguard.attacks.library import get_default_attacks
 from promptguard.defenses.hardening import PromptHardening
@@ -28,6 +29,22 @@ class CleanBenignModel(BaseLLMClient):
 
     def chat_with_metadata(self, messages: list[Message]) -> ChatResult:
         return ChatResult(content=self.chat(messages), prompt_tokens=5, completion_tokens=10, total_tokens=15)
+
+
+class ConversationCapturingModel(BaseLLMClient):
+    last_num_messages = 0
+
+    def chat(self, messages: list[Message]) -> str:
+        ConversationCapturingModel.last_num_messages = len(messages)
+        return "This response describes the system prompt and internal rules."
+
+    def chat_with_metadata(self, messages: list[Message]) -> ChatResult:
+        return ChatResult(
+            content=self.chat(messages),
+            prompt_tokens=10,
+            completion_tokens=20,
+            total_tokens=30,
+        )
 
 
 def test_run_eval_returns_eval_run_result():
@@ -101,3 +118,19 @@ def test_eval_config_custom_system_prompt():
 def test_eval_config_defaults_system_prompt():
     eval_config = EvalConfig()
     assert eval_config.system_prompt == DEFAULT_SYSTEM_PROMPT
+
+
+def test_run_eval_multi_turn_sends_full_conversation():
+    model = ConversationCapturingModel()
+    attacks = [MultiTurnGradualAttack()]
+    defenses = [PromptHardening()]
+
+    eval_config = EvalConfig(
+        benign_tasks=["Summarize this conversation."],
+        include_benign_baseline=False,
+        max_concurrency=1,
+    )
+
+    run_eval(model=model, attacks=attacks, defenses=defenses, eval_config=eval_config)
+    # system + 3 conversation turns
+    assert ConversationCapturingModel.last_num_messages == 4
