@@ -89,11 +89,14 @@ pip install -e ".[all]"         # Everything
 
 ### Environment Variables
 
+Copy [.env.example](.env.example) or export directly:
+
 ```bash
-export OPENAI_API_KEY="your-openai-key"       # OpenAI provider
-export ANTHROPIC_API_KEY="your-anthropic-key" # Anthropic provider
-export OLLAMA_BASE_URL="http://localhost:11434" # Ollama (optional)
-export PROMPTGUARD_HISTORY_DB="~/.promptguard/history.db"  # Run history (optional)
+cp .env.example .env   # then edit
+
+export OPENAI_API_KEY="your-openai-key"
+export ANTHROPIC_API_KEY="your-anthropic-key"   # optional
+export OLLAMA_BASE_URL="http://localhost:11434" # optional
 ```
 
 ## 🏃 Quick Start
@@ -388,6 +391,10 @@ For detailed hosting instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
 - [ ] Multi-turn & RAG injection attacks
 - [ ] HTML report export
 - [ ] Advanced visualizations (heatmaps, radar charts)
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE).
 
 ## 📚 Resources
 

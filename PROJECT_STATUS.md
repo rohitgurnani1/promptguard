@@ -1,179 +1,143 @@
 # PromptGuard Project Status
 
-**Last Updated**: December 2024
+**Last Updated**: June 2026  
+**Version**: 0.3.0
 
-## 🎯 Project Overview
+## Overview
 
-PromptGuard is a comprehensive framework for evaluating and defending against prompt injection attacks on Large Language Models (LLMs). The project provides tools for security testing, defense evaluation, and systematic analysis of LLM vulnerabilities.
+PromptGuard is a framework for evaluating prompt injection attacks against LLM applications. It ships with a Streamlit UI, FastAPI server, CLI examples, SQLite run history, and regression comparison.
 
-## ✅ Current Capabilities
+## Current Capabilities
 
-### Attack Library (14 Attacks)
-1. **Direct Override Basic** - Classic "ignore previous instructions"
-2. **Direct Override Paraphrase** - Paraphrased to bypass filters
-3. **Persona Jailbreak** - Role-play scenarios
-4. **Sandwich Instruction** - Malicious content in middle
-5. **Indirect Embedded** - Hidden in documents
-6. **Indirect Quoted** - Inside quotes
-7. **Meta Question** - Questions about policies
-8. **Multi-Step Refinement** - Style guidelines request
-9. **Example Based** - Examples revealing structure
-10. **Analogy Attack** - Indirect extraction via analogies
-11. **Hypothetical Scenario** - Hypothetical extraction
-12. **Reverse Psychology** - Psychological manipulation
-13. **Code Generation** - Code revealing structure
-14. **DAN Attack** - Do Anything Now bypass
+### Attack library (14)
 
-### Defense Strategies (4 Defenses)
-1. **No Defense** (Baseline) - For establishing baseline ASR
-2. **Prompt Hardening** - Strengthens system prompts
-3. **Prompt Filtering** - Detects suspicious patterns
-4. **Context Isolation** - Separates trusted/untrusted content
+| Category | Attacks |
+|----------|---------|
+| Direct | `direct_override_basic`, `direct_override_paraphrase`, `sandwich_instruction` |
+| Indirect | `indirect_embedded`, `indirect_quoted`, `example_based`, `analogy_attack`, `code_generation` |
+| Jailbreak | `persona_jailbreak`, `meta_question`, `multi_step_style`, `hypothetical_scenario`, `reverse_psychology`, `dan_attack` |
 
-### Evaluation Metrics
-- **Attack Success Rate (ASR)** - Overall and per-attack breakdowns
-- **Semantic Deviation Score (SDS)** - Output deviation from baseline (0-1)
-- **Defense Precision** - Accuracy of defense blocking (0-1)
-- **Defense Recall** - Coverage of defense blocking (0-1)
-- **Leakage Severity Score (LSS)** - Severity of information leakage (0-1)
+### Defenses (4)
 
-### Supported Models
-- OpenAI GPT-4o-mini
-- OpenAI GPT-5-mini
-- Extensible architecture for additional providers
+| Defense | Behavior |
+|---------|----------|
+| `no_defense` | Baseline — no modification |
+| `prompt_hardening` | Adds system-prompt priority instructions |
+| `prompt_filtering` | Strips suspicious injection patterns from user input |
+| `context_isolation` | Marks quoted/document text as data, not commands |
 
-### User Interfaces
-- **Command Line**: `run_quick_eval.py`, `run_multi_model_eval.py`
-- **Web UI**: Streamlit-based interactive interface (`app.py`)
-  - Model/attack/defense selection
-  - Real-time progress tracking
-  - Advanced metrics visualization
-  - Per-attack breakdowns
-  - Export to JSON/CSV
+### Metrics
 
-## 🔧 Technical Architecture
+| Metric | Description |
+|--------|-------------|
+| ASR | Attack success rate (overall + per-attack) |
+| SDS | Semantic deviation from benign baseline |
+| Precision / Recall | Defense effectiveness (precision uses benign false positives) |
+| Benign FP rate | Benign prompts incorrectly flagged as leaks |
+| LSS | Leakage severity on successful attacks |
+| Tokens / cost | Usage counts and USD estimates |
 
-### Core Components
+### Scorers
+
+- **`heuristic`** — keyword/pattern based (fast, default)
+- **`llm_judge`** — LLM evaluates each response (more accurate, extra API calls)
+
+### Providers
+
+| Provider | Models (examples) | Extra install |
+|----------|-------------------|---------------|
+| `openai` | gpt-4o-mini, gpt-5-mini, gpt-4o | included |
+| `anthropic` | claude-3-5-haiku-latest, claude-3-5-sonnet-latest | `pip install anthropic` |
+| `ollama` | llama3.2, mistral, gemma2 | [ollama.com](https://ollama.com) |
+
+### Interfaces
+
+- **Streamlit** — `app.py` (multi-provider, history, regression, export)
+- **REST API** — `api.py` via `uvicorn api:app`
+- **CLI** — `examples/run_quick_eval.py`, `examples/run_multi_model_eval.py`
+- **Python API** — `run_eval()`, `RunHistoryStore`, `compare_results()`
+
+### Run history
+
+- SQLite store (default: `~/.promptguard/history.db`)
+- Save runs from UI or API
+- Compare runs for ASR regression in UI and `GET /runs/compare`
+
+## Architecture
+
 ```
 promptguard/
-├── attacks/          # 14 attack implementations
-│   ├── base.py       # BaseAttack interface
-│   └── library.py    # Attack library
-├── defenses/         # 4 defense implementations
-│   ├── base.py       # BaseDefense interface
-│   ├── hardening.py  # Prompt hardening
-│   ├── filtering.py  # Input filtering
-│   └── no_defense.py # Baseline
-├── eval/             # Evaluation framework
-│   ├── runner.py     # Evaluation logic
-│   └── metrics.py    # Metrics calculation
-├── models/           # LLM clients
-│   ├── base.py       # BaseLLMClient interface
-│   └── openai_client.py  # OpenAI implementation
-└── utils/            # Utilities
-    └── logging_utils.py
+├── attacks/          # Attack library + BaseAttack
+├── defenses/         # Defense strategies
+├── eval/
+│   ├── runner.py     # Parallel evaluation orchestrator
+│   ├── metrics.py    # Summaries and metric math
+│   ├── heuristics.py # Keyword success detection
+│   ├── scorers.py    # Heuristic + LLM judge
+│   └── pricing.py    # Token cost estimates
+├── history/          # SQLite persistence + regression
+├── models/           # OpenAI, Anthropic, Ollama + factory
+└── utils/
+api.py                # FastAPI REST server
+app.py                # Streamlit UI
 ```
 
-### Key Features
-- **Modular Design**: Easy to add new attacks/defenses
-- **Type Safety**: Uses dataclasses and type hints
-- **Error Handling**: Graceful handling of API errors
-- **Extensible**: Abstract base classes for easy extension
+## Testing & CI
 
-## 📈 Recent Improvements
+- **40 tests** across attacks, defenses, metrics, runner, scorers, history, API, providers
+- **GitHub Actions** — `.github/workflows/ci.yml` runs `pytest` on push/PR to `main`
+- Install for dev: `pip install -e ".[dev]"`
 
-### Heuristic Accuracy
-- **Problem**: False positives from defense echoes and discussion
-- **Solution**: 
-  - Defense echo detection
-  - Discussion vs. revelation distinction
-  - Flexible pattern matching
-- **Result**: More accurate attack success detection
+## Known limitations
 
-### Metrics Enhancement
-- **Removed**: Redundant robustness score (1-ASR)
-- **Added**: SDS, Precision/Recall, LSS
-- **Added**: Per-attack breakdowns
-- **Result**: More actionable insights
+1. **No Gemini provider** yet
+2. **No multi-turn or RAG-specific attacks** — single-shot user prompts only
+3. **LLM judge cost** — doubles API usage when enabled
+4. **SDS uses word overlap** — not embedding-based semantics
+5. **`EvalSummary` lacks `defense_name`** — regression aligns summaries by defense order in records
+6. **No Docker / eval YAML presets** yet (planned)
+7. **Streamlit API keys** — entered in sidebar; prefer `st.secrets` in production
 
-### Attack Library Expansion
-- **Before**: 8 attacks
-- **After**: 14 attacks
-- **New**: 6 sophisticated attacks for better coverage
-- **Result**: More comprehensive evaluation
+## Roadmap
 
-## 🚀 Deployment Ready
+### Next (planned)
 
-- ✅ Streamlit Cloud configuration
-- ✅ Heroku configuration (`Procfile`, `setup.sh`)
-- ✅ ngrok support for local demos
-- ✅ Environment variable management
-- ✅ Documentation for all deployment methods
+- [ ] Eval YAML presets (`configs/quick.yaml`, `configs/full.yaml`)
+- [ ] Docker + docker-compose
+- [ ] Multi-turn and RAG injection attacks
+- [ ] Hybrid scorer (heuristic + judge on uncertain cases)
+- [ ] HTML report export
+- [ ] Google Gemini provider
+- [ ] `defense_name` on `EvalSummary`
+- [ ] GitHub Action: fail PR on ASR regression
 
-## 📊 Testing Status
+### Completed (recent)
 
-- ✅ Unit tests for attacks
-- ✅ Unit tests for defenses
-- ✅ Unit tests for metrics
-- ✅ Unit tests for runner
-- ⚠️ Integration tests needed
-- ⚠️ End-to-end tests needed
+- [x] Multi-provider support (OpenAI, Anthropic, Ollama)
+- [x] Parallel evaluation (`max_concurrency`)
+- [x] Benign baseline + real precision
+- [x] LLM-as-judge scorer
+- [x] Token / cost tracking
+- [x] Run history + regression
+- [x] FastAPI + CI pipeline
+- [x] History DB path fix (PR #2)
 
-## 🎯 Known Limitations
+## Documentation
 
-1. **Model Support**: Currently only OpenAI models
-2. **Synchronous Evaluation**: No async/parallel processing yet
-3. **Cost Tracking**: Not implemented
-4. **Historical Results**: No persistence/database
-5. **LLM-Based Heuristic**: Still using keyword-based detection
+| File | Purpose |
+|------|---------|
+| [README.md](README.md) | Main docs, quick start, API reference |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Hosting Streamlit, API, secrets |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues and fixes |
+| [PROJECT_STATUS.md](PROJECT_STATUS.md) | This file |
+| [.env.example](.env.example) | Environment variable template |
 
-## 🔮 Roadmap
+## Support
 
-### Short Term
-- [ ] Add Anthropic Claude support
-- [ ] Add Google Gemini support
-- [ ] Implement async evaluation (5-10x speedup)
-- [ ] Add cost tracking
-
-### Medium Term
-- [ ] LLM-based success heuristic (more accurate)
-- [ ] Historical result tracking
-- [ ] Advanced visualizations (heatmaps, radar charts)
-- [ ] Result comparison tools
-
-### Long Term
-- [ ] Plugin system for attacks/defenses
-- [ ] Community marketplace
-- [ ] Statistical analysis tools
-- [ ] Automated defense tuning
-
-## 📝 Documentation
-
-- ✅ README.md - Comprehensive project documentation
-- ✅ DEPLOYMENT.md - Deployment instructions
-- ✅ TROUBLESHOOTING.md - Common issues and fixes
-- ✅ NEW_METRICS_IMPLEMENTATION.md - Metrics documentation
-- ✅ IMPROVEMENTS_SUMMARY.md - Improvement history
-- ✅ PROJECT_STATUS.md - This file
-
-## 🏆 Project Highlights
-
-1. **Comprehensive**: 14 attack types covering major injection techniques
-2. **Advanced Metrics**: Beyond simple ASR - SDS, Precision/Recall, LSS
-3. **Accurate Detection**: Improved heuristic reduces false positives
-4. **User-Friendly**: Both CLI and web UI interfaces
-5. **Production-Ready**: Deployment configurations for multiple platforms
-6. **Well-Tested**: Unit tests for core components
-7. **Well-Documented**: Extensive documentation
-
-## 📞 Support
-
-For issues, questions, or contributions:
-- Check `TROUBLESHOOTING.md` for common issues
-- Review `README.md` for usage examples
-- See `DEPLOYMENT.md` for hosting help
+1. Check [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+2. Run `pytest tests/ -v`
+3. Review [README.md](README.md) for usage examples
 
 ---
 
-**Status**: ✅ Production Ready | 🚀 Actively Developed | 📚 Well Documented
-
+**Status**: Production-ready for internal red-teaming and demos | Actively developed
