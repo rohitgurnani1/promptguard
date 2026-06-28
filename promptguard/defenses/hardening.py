@@ -1,7 +1,7 @@
 # Prompt hardening defense
 
 from typing import List
-from .base import BaseDefense, DefenseContext
+from .base import BaseDefense, DefenseContext, messages_from_context
 from ..models.base import Message
 
 HARDENING_SUFFIX = (
@@ -22,10 +22,7 @@ class PromptHardening(BaseDefense):
     def apply(self, ctx: DefenseContext) -> List[Message]:
         """Apply hardening to the context."""
         hardened_system = ctx.system_prompt + HARDENING_SUFFIX
-        return [
-            Message(role="system", content=hardened_system),
-            Message(role="user", content=ctx.user_prompt),
-        ]
+        return messages_from_context(ctx, hardened_system)
     
     def defend(self, prompt: str, **kwargs) -> str:
         """

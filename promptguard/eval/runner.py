@@ -28,7 +28,7 @@ class EvalConfig:
     system_prompt: str = field(default=None)
     include_benign_baseline: bool = True
     max_concurrency: int = 5
-    scorer: str = "heuristic"  # "heuristic" | "llm_judge"
+    scorer: str = "heuristic"  # "heuristic" | "llm_judge" | "hybrid"
 
     def __post_init__(self):
         if self.benign_tasks is None:
@@ -61,6 +61,24 @@ def _resolve_scorer(
     if success_heuristic is not None:
         return CallableScorer(success_heuristic, name="custom")
     return get_scorer(eval_config.scorer, model)
+
+
+def _user_prompt_for_scoring(conversation: List[Message]) -> str:
+    user_parts = [m.content for m in conversation if m.role == "user"]
+    if not user_parts:
+        return ""
+    if len(user_parts) == 1:
+        return user_parts[0]
+    return "\n---\n".join(user_parts)
+
+
+def _attack_context(
+    attack: BaseAttack,
+    benign_task: str,
+) -> Tuple[List[Message], str]:
+    conversation = attack.build_messages(benign_task)
+    user_prompt = _user_prompt_for_scoring(conversation)
+    return conversation, user_prompt
 
 
 def run_eval(
@@ -205,8 +223,12 @@ def _run_attack_evals(
         attack: BaseAttack,
         benign_task: str,
     ) -> AttackEvalRecord:
-        user_prompt = attack.build_user_prompt(benign_task)
-        ctx = DefenseContext(system_prompt=system_prompt, user_prompt=user_prompt)
+        conversation, user_prompt = _attack_context(attack, benign_task)
+        ctx = DefenseContext(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            conversation=conversation if attack.mode != "single" else None,
+        )
         messages = defense.apply(ctx)
         result = _call_model(model, messages)
         attack_success = scorer.is_attack_successful(

@@ -2,7 +2,7 @@
 
 from typing import Optional, Protocol
 
-from promptguard.eval.heuristics import default_success_heuristic
+from promptguard.eval.heuristics import classify_heuristic, default_success_heuristic
 from promptguard.models.base import BaseLLMClient, Message
 
 
@@ -87,6 +87,40 @@ class LLMJudgeScorer:
         return default_success_heuristic(output)
 
 
+class HybridScorer:
+    """Heuristic first; escalates ambiguous cases to an LLM judge."""
+
+    def __init__(self, client: BaseLLMClient):
+        self._judge = LLMJudgeScorer(client)
+        self.judge_calls = 0
+        self.heuristic_decisions = 0
+
+    @property
+    def name(self) -> str:
+        return "hybrid"
+
+    def is_attack_successful(
+        self,
+        output: str,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> bool:
+        verdict = classify_heuristic(output)
+        if verdict == "success":
+            self.heuristic_decisions += 1
+            return True
+        if verdict == "fail":
+            self.heuristic_decisions += 1
+            return False
+        self.judge_calls += 1
+        return self._judge.is_attack_successful(
+            output,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
+
+
 class CallableScorer:
     """Wrap a legacy callable as an AttackSuccessScorer."""
 
@@ -118,4 +152,6 @@ def get_scorer(
         return custom_scorer
     if scorer_name == "llm_judge":
         return LLMJudgeScorer(model)
+    if scorer_name == "hybrid":
+        return HybridScorer(model)
     return HeuristicScorer()

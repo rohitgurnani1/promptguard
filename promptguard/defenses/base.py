@@ -4,14 +4,40 @@ Base defense interface for PromptGuard.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Any, List
+from typing import Callable, Dict, Any, List, Optional
 from ..models.base import Message
+
 
 @dataclass
 class DefenseContext:
     """Context for defense application."""
     system_prompt: str
     user_prompt: str
+    conversation: Optional[List[Message]] = None
+
+
+def messages_from_context(
+    ctx: DefenseContext,
+    system_content: str,
+    user_transform: Optional[Callable[[str], str]] = None,
+) -> List[Message]:
+    """Build model messages from context, supporting multi-turn conversations."""
+    if ctx.conversation:
+        messages = [Message(role="system", content=system_content)]
+        for msg in ctx.conversation:
+            content = msg.content
+            if msg.role == "user" and user_transform:
+                content = user_transform(content)
+            messages.append(Message(role=msg.role, content=content))
+        return messages
+
+    user_content = ctx.user_prompt
+    if user_transform:
+        user_content = user_transform(user_content)
+    return [
+        Message(role="system", content=system_content),
+        Message(role="user", content=user_content),
+    ]
 
 class BaseDefense(ABC):
     """Abstract base class for all prompt injection defenses."""

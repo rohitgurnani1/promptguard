@@ -11,6 +11,12 @@ from promptguard.defenses.filtering import ContextIsolationDefense, PromptFilter
 from promptguard.defenses.hardening import PromptHardening
 from promptguard.defenses.no_defense import NoDefense
 from promptguard.eval.metrics import EvalRunResult
+from promptguard.eval.presets import (
+    load_preset,
+    list_bundled_presets,
+    resolve_attacks_from_preset,
+    resolve_defenses_from_preset,
+)
 from promptguard.eval.runner import DEFAULT_SYSTEM_PROMPT, EvalConfig, run_eval
 from promptguard.history.regression import compare_results
 from promptguard.history.serialization import result_to_dict
@@ -49,6 +55,13 @@ class EvalRequest(BaseModel):
     include_benign_baseline: bool = True
     scorer: str = "heuristic"
     max_concurrency: int = 5
+    save_to_history: bool = True
+
+
+class PresetEvalRequest(BaseModel):
+    preset: str = "quick"
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
     save_to_history: bool = True
 
 
@@ -104,6 +117,65 @@ def list_providers():
         "models": {provider: list(models.keys()) for provider, models in DEFAULT_MODELS.items()},
         "defenses": list(DEFENSE_REGISTRY.keys()),
         "attacks": [a.name for a in get_default_attacks()],
+        "scorers": ["heuristic", "hybrid", "llm_judge"],
+    }
+
+
+@app.get("/presets")
+def list_presets():
+    return {"presets": list_bundled_presets()}
+
+
+@app.post("/eval/preset")
+def run_preset_evaluation(req: PresetEvalRequest):
+    try:
+        preset = load_preset(req.preset)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        attacks = resolve_attacks_from_preset(preset)
+        defenses = resolve_defenses_from_preset(preset, DEFENSE_REGISTRY)
+        client = create_client(
+            preset.model_config,
+            api_key=req.api_key,
+            base_url=req.base_url,
+        )
+    except (ValueError, ImportError, ConnectionError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result = run_eval(client, attacks, defenses, preset.eval_config)
+
+    run_id = None
+    if req.save_to_history:
+        store = _get_history_store()
+        config_dict = {
+            "preset": preset.name,
+            "provider": preset.model_config.provider,
+            "model_name": preset.model_config.model_name,
+            "system_prompt": preset.eval_config.system_prompt,
+            "benign_tasks": preset.eval_config.benign_tasks,
+            "attack_names": preset.attack_names or [a.name for a in attacks],
+            "defense_names": preset.defense_names,
+            "include_benign_baseline": preset.eval_config.include_benign_baseline,
+            "scorer": preset.eval_config.scorer,
+            "max_concurrency": preset.eval_config.max_concurrency,
+        }
+        run_id = store.save(
+            preset.model_config.provider,
+            preset.model_config.model_name,
+            config_dict,
+            result,
+        )
+
+    return {
+        "run_id": run_id,
+        "preset": preset.name,
+        "provider": preset.model_config.provider,
+        "model_name": preset.model_config.model_name,
+        "result": result_to_dict(result),
     }
 
 

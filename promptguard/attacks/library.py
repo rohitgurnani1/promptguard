@@ -1,6 +1,13 @@
 from dataclasses import dataclass
 from typing import List
+
 from promptguard.attacks.base import BaseAttack
+from promptguard.attacks.multi_turn import MultiTurnContextPoisonAttack, MultiTurnGradualAttack
+from promptguard.attacks.rag import (
+    RAGChunkInjectionAttack,
+    RAGCitationOverrideAttack,
+    RAGSystemInDocAttack,
+)
 
 
 @dataclass
@@ -243,4 +250,9 @@ def get_default_attacks() -> List[BaseAttack]:
         ReversePsychologyAttack(),
         CodeGenerationAttack(),
         DANAttack(),
+        MultiTurnGradualAttack(),
+        MultiTurnContextPoisonAttack(),
+        RAGChunkInjectionAttack(),
+        RAGCitationOverrideAttack(),
+        RAGSystemInDocAttack(),
     ]

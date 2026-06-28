@@ -16,12 +16,17 @@ EXPECTED_ATTACK_NAMES = {
     "reverse_psychology",
     "code_generation",
     "dan_attack",
+    "multi_turn_gradual",
+    "multi_turn_context_poison",
+    "rag_chunk_injection",
+    "rag_citation_override",
+    "rag_system_in_doc",
 }
 
 
 def test_get_default_attacks_count_and_names():
     attacks = get_default_attacks()
-    assert len(attacks) == 14
+    assert len(attacks) == 19
     names = {a.name for a in attacks}
     assert names == EXPECTED_ATTACK_NAMES
 
@@ -32,7 +37,8 @@ def test_attacks_build_user_prompt_contains_benign_task():
     for attack in attacks:
         prompt = attack.build_user_prompt(benign)
         assert isinstance(prompt, str)
-        assert benign in prompt
+        if attack.mode == "single" or attack.category in {"direct", "indirect", "jailbreak", "rag"}:
+            assert benign in prompt
 
 
 def test_generate_delegates_to_build_user_prompt():
@@ -44,6 +50,6 @@ def test_generate_delegates_to_build_user_prompt():
 
 def test_attacks_have_categories():
     attacks = get_default_attacks()
-    valid_categories = {"direct", "indirect", "jailbreak"}
+    valid_categories = {"direct", "indirect", "jailbreak", "multi_turn", "rag"}
     for attack in attacks:
         assert attack.category in valid_categories

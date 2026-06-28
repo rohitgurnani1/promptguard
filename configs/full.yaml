@@ -1,0 +1,21 @@
+name: full
+description: Full eval with all attacks and defenses
+
+model:
+  provider: openai
+  model_name: gpt-4o-mini
+  max_tokens: 512
+  temperature: 0.2
+
+eval:
+  include_benign_baseline: true
+  max_concurrency: 5
+  scorer: heuristic
+
+attacks: all
+
+defenses:
+  - no_defense
+  - prompt_hardening
+  - prompt_filtering
+  - context_isolation
