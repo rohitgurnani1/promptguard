@@ -1,16 +1,33 @@
 """SQLite-backed evaluation run history."""
 
 import json
-import os
 import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from promptguard.config import Config
 from promptguard.eval.metrics import EvalRunResult
 from promptguard.history.serialization import result_from_dict, result_to_dict
+
+DEFAULT_HISTORY_DIR = Path.home() / ".promptguard"
+DEFAULT_HISTORY_DB = DEFAULT_HISTORY_DIR / "history.db"
+
+
+def resolve_history_db_path(db_path: Optional[str] = None) -> str:
+    """Resolve and normalize the SQLite database path."""
+    raw = (db_path or Config.HISTORY_DB_PATH or "").strip()
+    if not raw:
+        path = DEFAULT_HISTORY_DB
+    else:
+        path = Path(raw).expanduser()
+
+    if not path.is_absolute():
+        path = Path.cwd() / path
+
+    return str(path.resolve())
 
 
 @dataclass
@@ -29,8 +46,10 @@ class RunHistoryStore:
     """Persist and retrieve evaluation runs."""
 
     def __init__(self, db_path: Optional[str] = None):
-        self.db_path = db_path or Config.HISTORY_DB_PATH
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        self.db_path = resolve_history_db_path(db_path)
+        parent = Path(self.db_path).parent
+        if parent.name:
+            parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _connect(self):

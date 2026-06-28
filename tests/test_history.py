@@ -55,3 +55,19 @@ def test_history_store_get_and_delete():
 
         assert store.delete(run_id) is True
         assert store.get(run_id) is None
+
+
+def test_history_store_bare_filename():
+    with tempfile.TemporaryDirectory() as tmp:
+        os.chdir(tmp)
+        store = RunHistoryStore(db_path="history.db")
+        run_id = store.save("openai", "gpt-4o-mini", {}, _sample_result())
+        assert store.get(run_id) is not None
+
+
+def test_resolve_history_db_path_empty_uses_default():
+    from promptguard.history.store import resolve_history_db_path
+
+    path = resolve_history_db_path("")
+    assert path.endswith("history.db")
+    assert ".promptguard" in path
