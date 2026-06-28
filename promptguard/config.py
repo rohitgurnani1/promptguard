@@ -27,9 +27,11 @@ class Config:
     DEFAULT_TEMPERATURE: float = 0.0
     DEFAULT_MAX_TOKENS: int = 1000
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    HISTORY_DB_PATH: str = os.getenv(
-        "PROMPTGUARD_HISTORY_DB",
-        os.path.join(os.path.expanduser("~"), ".promptguard", "history.db"),
+    _history_db_env = os.getenv("PROMPTGUARD_HISTORY_DB")
+    HISTORY_DB_PATH: str = (
+        _history_db_env
+        if _history_db_env
+        else os.path.join(os.path.expanduser("~"), ".promptguard", "history.db")
     )
 
 
