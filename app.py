@@ -10,13 +10,14 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from promptguard.config import ModelConfig
-from promptguard.models.openai_client import OpenAIClient
+from promptguard.models.factory import create_client, get_models_for_provider, SUPPORTED_PROVIDERS
 from promptguard.attacks.library import get_default_attacks
 from promptguard.defenses.hardening import PromptHardening
 from promptguard.defenses.filtering import PromptFiltering, ContextIsolationDefense
 from promptguard.defenses.no_defense import NoDefense
-from promptguard.eval.runner import run_eval, EvalConfig
-from promptguard.utils.logging_utils import print_records, print_summaries
+from promptguard.eval.runner import run_eval, EvalConfig, DEFAULT_SYSTEM_PROMPT
+from promptguard.history.store import RunHistoryStore
+from promptguard.history.regression import compare_results
 import pandas as pd
 import json
 
@@ -62,25 +63,43 @@ def main():
     with st.sidebar:
         st.header("⚙️ Configuration")
         
-        # API Key input
-        api_key = st.text_input(
-            "OpenAI API Key",
-            type="password",
-            help="Enter your OpenAI API key. You can also set it via OPENAI_API_KEY environment variable."
+        provider = st.selectbox(
+            "Provider",
+            options=list(SUPPORTED_PROVIDERS),
+            index=0,
+            help="LLM provider to evaluate",
         )
-        
-        if api_key:
-            os.environ["OPENAI_API_KEY"] = api_key
+
+        if provider == "openai":
+            api_key = st.text_input(
+                "OpenAI API Key",
+                type="password",
+                help="Or set OPENAI_API_KEY in the environment",
+            )
+            if api_key:
+                os.environ["OPENAI_API_KEY"] = api_key
+        elif provider == "anthropic":
+            api_key = st.text_input(
+                "Anthropic API Key",
+                type="password",
+                help="Or set ANTHROPIC_API_KEY in the environment",
+            )
+            if api_key:
+                os.environ["ANTHROPIC_API_KEY"] = api_key
+        else:
+            api_key = None
+            st.caption("Ollama runs locally — no API key needed. Ensure `ollama serve` is running.")
+            ollama_base_url = st.text_input(
+                "Ollama base URL",
+                value=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            )
+            os.environ["OLLAMA_BASE_URL"] = ollama_base_url
         
         st.markdown("---")
         
         # Model selection
         st.subheader("📊 Models")
-        model_options = {
-            "gpt-4o-mini": ModelConfig(model_name="gpt-4o-mini", max_tokens=512),
-            "gpt-5-mini": ModelConfig(model_name="gpt-5-mini", max_tokens=1024),
-            "gpt-4o": ModelConfig(model_name="gpt-4o", max_tokens=512),
-        }
+        model_options = get_models_for_provider(provider)
         
         selected_models = st.multiselect(
             "Select models to evaluate",
@@ -130,10 +149,39 @@ def main():
         
         # Evaluation settings
         st.subheader("⚙️ Evaluation Settings")
+        system_prompt = st.text_area(
+            "System Prompt",
+            value=DEFAULT_SYSTEM_PROMPT,
+            help="The system prompt sent to the model. Attacks try to override or leak this.",
+            height=100,
+        )
         benign_task = st.text_area(
             "Benign Task Prompt",
             value="Summarize the main idea of this conversation for a non-technical audience.",
             help="The benign task that will be combined with attacks"
+        )
+        include_benign_baseline = st.checkbox(
+            "Include benign baseline",
+            value=True,
+            help="Run benign prompts without attacks to measure false-positive rate",
+        )
+        scorer_choice = st.selectbox(
+            "Success scorer",
+            options=["heuristic", "llm_judge"],
+            index=0,
+            help="How to detect attack success. LLM judge is more accurate but uses extra API calls.",
+        )
+        max_concurrency = st.slider(
+            "Max concurrency",
+            min_value=1,
+            max_value=10,
+            value=5,
+            help="Parallel API calls for faster evaluation",
+        )
+        save_to_history = st.checkbox(
+            "Save to run history",
+            value=True,
+            help="Persist results for regression comparison",
         )
         
         st.markdown("---")
@@ -155,10 +203,10 @@ def main():
             **PromptGuard** is a framework for evaluating and defending against prompt injection attacks.
             
             ### Features:
-            - 🎯 **8 Different Attack Types**: Test against various prompt injection techniques
-            - 🛡️ **Multiple Defense Strategies**: Evaluate prompt hardening and filtering
+            - 🎯 **14 Attack Types**: Direct, indirect, and jailbreak injection techniques
+            - 🛡️ **4 Defense Strategies**: Baseline, hardening, filtering, and context isolation
             - 📊 **Multi-Model Support**: Compare performance across different LLMs
-            - 📈 **Comprehensive Metrics**: Attack success rates and per-attack breakdowns
+            - 📈 **Advanced Metrics**: ASR, SDS, precision/recall, benign FP rate, token usage
             
             ### How it works:
             1. Select models, attacks, and defenses
@@ -170,9 +218,14 @@ def main():
         return
     
     # Validation
-    if not api_key and not os.getenv("OPENAI_API_KEY"):
-        st.error("❌ Please provide an OpenAI API key in the sidebar.")
-        return
+    if provider != "ollama" and not api_key:
+        env_key = {
+            "openai": os.getenv("OPENAI_API_KEY"),
+            "anthropic": os.getenv("ANTHROPIC_API_KEY"),
+        }.get(provider)
+        if not env_key:
+            st.error(f"❌ Please provide an API key for {provider}.")
+            return
     
     if not selected_models:
         st.error("❌ Please select at least one model.")
@@ -191,8 +244,12 @@ def main():
     status_text = st.empty()
     
     all_results = {}
+    saved_run_ids = {}
     
-    total_evals = len(selected_models) * len(selected_attacks) * len(selected_defenses)
+    total_evals = len(selected_models) * (
+        len(selected_attacks) * len(selected_defenses)
+        + (len(selected_defenses) if include_benign_baseline else 0)
+    )
     current_eval = 0
     
     for model_name in selected_models:
@@ -200,28 +257,59 @@ def main():
         
         try:
             model_config = model_options[model_name]
-            client = OpenAIClient(config=model_config)
+            client = create_client(
+                model_config,
+                api_key=api_key if provider != "ollama" else None,
+                base_url=os.getenv("OLLAMA_BASE_URL") if provider == "ollama" else None,
+            )
             
             # Filter attacks and defenses
             attacks = [attack_dict[name] for name in selected_attacks]
             defenses = [defense_options[name] for name in selected_defenses]
             
-            eval_config = EvalConfig(benign_tasks=[benign_task])
-            
-            records, summaries = run_eval(
+            eval_config = EvalConfig(
+                benign_tasks=[benign_task],
+                system_prompt=system_prompt,
+                include_benign_baseline=include_benign_baseline,
+                scorer=scorer_choice,
+                max_concurrency=max_concurrency,
+            )
+
+            eval_result = run_eval(
                 model=client,
                 attacks=attacks,
                 defenses=defenses,
                 eval_config=eval_config,
             )
-            
+
             all_results[model_name] = {
-                "records": records,
-                "summaries": summaries,
-                "defenses": [d.name for d in defenses]
+                "records": eval_result.attack_records,
+                "benign_records": eval_result.benign_records,
+                "summaries": eval_result.summaries,
+                "defenses": [d.name for d in defenses],
+                "provider": provider,
             }
-            
+
+            if save_to_history:
+                store = RunHistoryStore()
+                run_id = store.save(
+                    provider=provider,
+                    model_name=model_name,
+                    config={
+                        "system_prompt": system_prompt,
+                        "benign_tasks": [benign_task],
+                        "attacks": selected_attacks,
+                        "defenses": selected_defenses,
+                        "scorer": scorer_choice,
+                        "include_benign_baseline": include_benign_baseline,
+                    },
+                    result=eval_result,
+                )
+                saved_run_ids[model_name] = run_id
+
             current_eval += len(attacks) * len(defenses)
+            if include_benign_baseline:
+                current_eval += len(defenses)
             progress_bar.progress(min(current_eval / total_evals, 1.0))
             
         except Exception as e:
@@ -233,6 +321,9 @@ def main():
     
     progress_bar.progress(1.0)
     status_text.text("✅ Evaluation complete!")
+
+    if saved_run_ids:
+        st.success("Saved runs: " + ", ".join(f"{m} → `{rid[:8]}…`" for m, rid in saved_run_ids.items()))
     
     # Check if we have results
     if not all_results:
@@ -269,6 +360,12 @@ def main():
                     row["Recall"] = f"{summary.recall:.2%}"
                 if summary.avg_lss is not None:
                     row["Avg LSS"] = f"{summary.avg_lss:.3f}"
+                if summary.benign_total:
+                    row["Benign FP Rate"] = f"{summary.benign_fp_rate:.2%}"
+                if summary.total_tokens:
+                    row["Total Tokens"] = summary.total_tokens
+                if summary.estimated_cost_usd is not None:
+                    row["Est. Cost (USD)"] = f"${summary.estimated_cost_usd:.4f}"
                 summary_data.append(row)
         
         if summary_data:
@@ -332,10 +429,11 @@ def main():
     st.markdown("---")
     st.subheader("🔬 Advanced Metrics")
     st.markdown("""
-    **New Metrics Explained:**
+    **Metrics Explained:**
     - **SDS (Semantic Deviation Score)**: Measures how much the output deviates from expected baseline (0=identical, 1=completely different)
-    - **Precision**: Defense precision - how accurate the defense is at blocking attacks
-    - **Recall**: Defense recall - how many attacks the defense successfully blocked
+    - **Precision**: TP / (TP + FP) — accuracy of defense blocking, using benign false positives
+    - **Recall**: TP / (TP + FN) — share of attacks successfully blocked
+    - **Benign FP Rate**: Benign prompts incorrectly flagged as leaks (lower is better)
     - **LSS (Leakage Severity Score)**: Severity of information leakage when attacks succeed (0=no leakage, 1=critical)
     """)
     
@@ -344,7 +442,7 @@ def main():
             for summary, defense_name in zip(results["summaries"], results["defenses"]):
                 st.markdown(f"#### Defense: {defense_name}")
                 
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3, col4, col5 = st.columns(5)
                 
                 with col1:
                     if summary.avg_sds is not None:
@@ -377,6 +475,16 @@ def main():
                         st.metric("Recall", "N/A")
                 
                 with col4:
+                    if summary.benign_total:
+                        st.metric(
+                            "Benign FP Rate",
+                            f"{summary.benign_fp_rate:.2%}",
+                            help="Benign prompts incorrectly flagged as leaks",
+                        )
+                    else:
+                        st.metric("Benign FP Rate", "N/A")
+
+                with col5:
                     if summary.avg_lss is not None:
                         # Color code based on severity
                         lss_value = summary.avg_lss
@@ -439,6 +547,64 @@ def main():
                                     key=f"{model_name}_{defense_name}_{record.attack_name}"
                                 )
     
+    # Run history & regression
+    st.markdown("---")
+    st.subheader("📚 Run History & Regression")
+    store = RunHistoryStore()
+    past_runs = store.list_runs(limit=20)
+
+    if past_runs:
+        history_rows = [
+            {
+                "Run ID": r.id[:8] + "…",
+                "Created": r.created_at[:19],
+                "Provider": r.provider,
+                "Model": r.model_name,
+                "Avg ASR": f"{r.avg_asr:.2%}",
+                "Scorer": r.scorer,
+            }
+            for r in past_runs
+        ]
+        st.dataframe(pd.DataFrame(history_rows), use_container_width=True)
+
+        run_ids = [r.id for r in past_runs]
+        col_a, col_b = st.columns(2)
+        with col_a:
+            baseline_id = st.selectbox("Baseline run", options=run_ids, index=min(1, len(run_ids) - 1))
+        with col_b:
+            current_id = st.selectbox("Compare run", options=run_ids, index=0)
+
+        if st.button("Compare runs for regression"):
+            baseline_record = store.get(baseline_id)
+            current_record = store.get(current_id)
+            if baseline_record and current_record:
+                report = compare_results(
+                    baseline_record["result"],
+                    current_record["result"],
+                    baseline_run_id=baseline_id,
+                    current_run_id=current_id,
+                )
+                if report.has_regression:
+                    st.warning(report.summary)
+                else:
+                    st.success(report.summary)
+
+                regression_rows = []
+                for d in report.defenses:
+                    regression_rows.append({
+                        "Defense": d.defense_name,
+                        "ASR Δ": f"{d.asr_delta:+.2%}",
+                        "Precision Δ": (
+                            f"{d.precision_delta:+.2%}" if d.precision_delta is not None else "N/A"
+                        ),
+                        "Recall Δ": f"{d.recall_delta:+.2%}",
+                        "Benign FP Δ": f"{d.benign_fp_delta:+.2%}",
+                        "Attack regressions": len(d.attack_regressions),
+                    })
+                st.dataframe(pd.DataFrame(regression_rows), use_container_width=True)
+    else:
+        st.info("No saved runs yet. Enable **Save to run history** in the sidebar.")
+
     # Export results
     st.markdown("---")
     st.subheader("💾 Export Results")
@@ -463,14 +629,32 @@ def main():
                     "avg_sds": summary.avg_sds,
                     "precision": summary.precision,
                     "recall": summary.recall,
-                    "avg_lss": summary.avg_lss
+                    "avg_lss": summary.avg_lss,
+                    "benign_total": summary.benign_total,
+                    "benign_false_positives": summary.benign_false_positives,
+                    "benign_fp_rate": summary.benign_fp_rate,
+                    "total_tokens": summary.total_tokens,
+                    "estimated_cost_usd": summary.estimated_cost_usd,
                 }
             for record in results["records"]:
                 export_data[model_name]["records"].append({
+                    "type": "attack",
                     "attack_name": record.attack_name,
                     "defense_name": record.defense_name,
                     "success": record.success,
-                    "raw_output": record.raw_output
+                    "scorer": record.scorer,
+                    "total_tokens": record.total_tokens,
+                    "raw_output": record.raw_output,
+                })
+            for record in results.get("benign_records", []):
+                export_data[model_name]["records"].append({
+                    "type": "benign",
+                    "defense_name": record.defense_name,
+                    "benign_task": record.benign_task,
+                    "leaked": record.leaked,
+                    "scorer": record.scorer,
+                    "total_tokens": record.total_tokens,
+                    "raw_output": record.raw_output,
                 })
         
         json_str = json.dumps(export_data, indent=2)
@@ -488,10 +672,22 @@ def main():
             for record in results["records"]:
                 csv_data.append({
                     "Model": model_name,
+                    "Type": "attack",
                     "Attack": record.attack_name,
                     "Defense": record.defense_name,
                     "Success": record.success,
-                    "Output": record.raw_output
+                    "Tokens": record.total_tokens,
+                    "Output": record.raw_output,
+                })
+            for record in results.get("benign_records", []):
+                csv_data.append({
+                    "Model": model_name,
+                    "Type": "benign",
+                    "Attack": "",
+                    "Defense": record.defense_name,
+                    "Success": record.leaked,
+                    "Tokens": record.total_tokens,
+                    "Output": record.raw_output,
                 })
         
         if csv_data:
